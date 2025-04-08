@@ -1,0 +1,279 @@
+local Queues = {}
+local PlayerDispend = {}
+local BaseSettings = {}
+local CountdownThreads = {}
+local PlayersInGate = {}
+
+function Queues.Initializing(Template)
+	for i, v in ipairs(Template:GetChildren()) do
+		if v:IsA("Folder") then
+			local Settings = v.Settings
+			local CurrentPlayer = Settings.CurrentPlayer
+			local MaxPlayer = Settings.MaxPlayer
+			local CD = Settings.CD
+			local UI = v.UI
+			local BillBoard = UI.BillboardGui
+			local PlrAmount = BillBoard.PlayerAmount
+			local QueuCd = BillBoard.QueuCD
+			local Expos = v.ExitPos
+			local JPos = v.JoinPos
+
+			BaseSettings[v.Name] = {
+				CD = CD.Value,
+				CurrentPlr = CurrentPlayer.Value,
+				MaxPlr = MaxPlayer.Value,
+				ExitPos = Expos,
+				JoinPos = JPos
+			}
+
+			PlrAmount.Text = tostring(CurrentPlayer.Value).."/"..tostring(MaxPlayer.Value)
+			QueuCd.Text = tostring(CD.Value)
+			print("Gate initialized:", v.Name)
+		end
+	end
+	print("Final BaseSettings:", BaseSettings)
+end
+
+function Queues.AddPlayer(Player, Settings, BillBoard, GateName)
+	local player = game.Players:GetPlayerFromCharacter(Player)
+	if not player then return end
+
+	if not PlayerDispend[player] then
+		PlayerDispend[player] = {}
+	end
+
+	local gateName = GateName.Name
+	if PlayerDispend[player][gateName] and PlayerDispend[player][gateName] > 0 then
+		return
+	end
+
+	if Settings.CurrentPlayer.Value < Settings.MaxPlayer.Value then
+		local JoinPos = BaseSettings[gateName].JoinPos
+		local HRP = Player:FindFirstChild("HumanoidRootPart")
+		local PlrAmount = BillBoard.PlayerAmount
+		local QueuCd = BillBoard.QueuCD
+
+		if not PlayersInGate[gateName] then
+			PlayersInGate[gateName] = {}
+		end
+		PlayersInGate[gateName][player] = true
+
+		Settings.CurrentPlayer.Value += 1
+		HRP.CFrame = JoinPos.CFrame
+		PlrAmount.Text = tostring(Settings.CurrentPlayer.Value).."/"..tostring(Settings.MaxPlayer.Value)
+		QueuCd.Text = tostring(Settings.CD.Value)
+	end
+end
+
+function Queues.IsEmpty(CurrentPlayer)
+	if CurrentPlayer.Value == 0 then
+		return true
+	else
+		return false
+	end
+end
+
+function Queues.CountDown(Settings, Billboard, GateName)
+	local QueuCD = Billboard.QueuCD
+	local PlrAmount = Billboard.PlayerAmount
+	local gateName = GateName.Name
+
+	if CountdownThreads[gateName] then
+		task.cancel(CountdownThreads[gateName])
+		CountdownThreads[gateName] = nil
+	end
+
+	if Settings.CurrentPlayer.Value > 0 then
+		CountdownThreads[gateName] = task.spawn(function()
+	
+			while Settings.CD.Value >= 0 do
+	
+				if Queues.IsEmpty(Settings.CurrentPlayer) then
+					Queues.Reset(Settings, Billboard, GateName)
+					break 
+				end
+
+				QueuCD.Text = tostring(Settings.CD.Value)
+				if Settings.CD.Value == 0 then
+			
+					QueuCD.Text = "Teleporting!!"
+					local dotAnimationThread
+					dotAnimationThread = task.spawn(function()
+						local dots = {".", "..", "..."}
+						local dotIndex = 1
+
+						while true do
+							PlrAmount.Text = "Waiting" .. dots[dotIndex]
+							dotIndex = dotIndex % 3 + 1
+							task.wait(0.5)
+						end
+					end)
+
+					task.delay(2, function()
+						if dotAnimationThread then
+							task.cancel(dotAnimationThread)
+						end
+						
+						Queues.TeleportPlayers(Settings, GateName)
+
+				
+						local baseSettings = BaseSettings[gateName]
+						task.delay(1, function()
+			
+							if Queues.IsEmpty(Settings.CurrentPlayer) then
+								PlrAmount.Text = "0/" .. tostring(baseSettings.MaxPlr)
+								QueuCD.Text = tostring(baseSettings.CD)
+							end
+						end)
+					end)
+
+					break
+				end
+
+				task.wait(1)
+				Settings.CD.Value = Settings.CD.Value - 1
+			end
+
+			CountdownThreads[gateName] = nil
+		end)
+	end
+end
+
+function Queues.TeleportPlayers(Settings, GateName)
+	local TeleportService = game:GetService("TeleportService")
+	local Billboard = GateName.UI:FindFirstChild("BillboardGui")
+	local TeleportDestination = Settings.PlaceID
+
+	if not TeleportDestination then
+		print("No PlaceID found in settings")
+		return
+	end
+
+	local destination = TeleportDestination.Value
+	if not destination then 
+		print("Invalid destination PlaceID")
+		return
+	end
+
+	local joinPos = BaseSettings[GateName.Name].JoinPos
+	if not joinPos then
+		print("No JoinPos found")	return end
+
+
+	local playersToTeleport = {}
+	local players = game.Players:GetPlayers()
+
+	for _, player in pairs(players) do
+		if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			local distance = (player.Character.HumanoidRootPart.Position - joinPos.Position).Magnitude
+			if distance < 10 then
+				table.insert(playersToTeleport, player)
+			end
+		end
+	end
+
+
+	print("Found", #playersToTeleport, "players to teleport")
+
+	if #playersToTeleport > 0 then
+		print("Attempting to teleport to place ID:", destination)
+		local success, errorMsg = pcall(function()
+			TeleportService:TeleportAsync(destination, playersToTeleport)
+		end)
+
+		if not success then
+			print("Teleport failed:", errorMsg)
+		end
+	else
+		print("No players to teleport")
+	end
+
+	-- Reset queue after teleporting
+	Queues.Reset(Settings, Billboard, GateName)
+end
+
+function Queues.Exit(Settings, Player, GateName, Billboard)
+	local player = game.Players:GetPlayerFromCharacter(Player)
+	if not player then return end
+
+	local HRP = Player:FindFirstChild("HumanoidRootPart")
+	local gateName = GateName.Name
+	local SettingGate = BaseSettings[gateName]
+	local BaseCD = SettingGate.CD
+	local PlrAmount = Billboard.PlayerAmount
+	local ExitPos = SettingGate.ExitPos
+
+		  if PlayersInGate[gateName] then
+        PlayersInGate[gateName][player] = nil
+    end
+	if HRP and ExitPos then
+		HRP.CFrame = ExitPos.CFrame
+		Settings.CurrentPlayer.Value -= 1
+
+		Settings.CD.Value = math.min(Settings.CD.Value + 3, BaseCD)
+		PlrAmount.Text = tostring(Settings.CurrentPlayer.Value).."/"..tostring(SettingGate.MaxPlr)
+		Billboard.QueuCD.Text = tostring(Settings.CD.Value)
+
+		if not PlayerDispend[player] then
+			PlayerDispend[player] = {}
+		end
+
+		PlayerDispend[player][gateName] = 15
+
+		if Settings.CurrentPlayer.Value <= 0 and CountdownThreads[gateName] then
+			task.cancel(CountdownThreads[gateName])
+			CountdownThreads[gateName] = nil
+
+			Settings.CD.Value = BaseCD
+			Billboard.QueuCD.Text = tostring(BaseCD)
+		end
+	end
+end
+
+function Queues.Reset(Settings, Billboard, GateName)
+	local gateName = GateName.Name
+	local SettingBase = BaseSettings[gateName]
+
+	if Queues.IsEmpty(Settings.CurrentPlayer) then
+		local PlrAmount = Billboard.PlayerAmount
+		local QueuCd = Billboard.QueuCD
+
+		Settings.CD.Value = SettingBase.CD
+		Settings.CurrentPlayer.Value = SettingBase.CurrentPlr
+
+		PlrAmount.Text = tostring(SettingBase.CurrentPlr).."/"..tostring(SettingBase.MaxPlr)
+		QueuCd.Text = tostring(SettingBase.CD)
+
+		if CountdownThreads[gateName] then
+			task.cancel(CountdownThreads[gateName])
+			CountdownThreads[gateName] = nil
+		end
+	end
+end
+
+function Queues.UpdatePlayerDispend()
+	for player, gates in pairs(PlayerDispend) do
+		for gateName, times in pairs(gates) do
+			if times > 0 then
+				PlayerDispend[player][gateName] = times - 1
+			end
+		end
+	end
+end
+
+function Queues.IsOnCooldown(Player, GateName)
+	local player = game.Players:GetPlayerFromCharacter(Player)
+	if not player then return false end
+
+	if not PlayerDispend[player] then
+		return false
+	end
+
+	if PlayerDispend[player][GateName.Name] and PlayerDispend[player][GateName.Name] > 0 then
+		return true
+	end
+
+	return false
+end
+
+return Queues
