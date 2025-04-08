@@ -1,0 +1,26 @@
+local RS = game:GetService("ReplicatedStorage")
+local SS = game:GetService("ServerStorage")
+local BindFolder = SS:FindFirstChild("BindAbleEvent")
+local TouchedEvent = BindFolder:FindFirstChild("TouchedBind")
+local QueueExit = BindFolder:FindFirstChild("QueueExit")
+local QueueFolder = workspace:FindFirstChild("QueueFolder")
+local QueueModule = require(script.QueuesModule)
+
+QueueModule.Initializing(QueueFolder)
+
+task.spawn(function()
+	while true do
+		QueueModule.UpdatePlayerDispend()
+		task.wait(1)
+	end
+end)
+
+TouchedEvent.Event:Connect(function(Player, Settings, BillBoard, GateName)
+	QueueModule.AddPlayer(Player, Settings, BillBoard, GateName)
+	QueueModule.CountDown(Settings, BillBoard, GateName)
+end)
+
+QueueExit.Event:Connect(function(Settings, Player, GateName, Billboard)
+	QueueModule.Exit(Settings, Player, GateName, Billboard)
+	QueueModule.Reset(Settings, Billboard, GateName)
+end)
