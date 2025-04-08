@@ -1,0 +1,24 @@
+local Player = game.Players.LocalPlayer
+local GUI = Player.PlayerGui
+local PlayerCam = workspace.CurrentCamera
+local ExitUI = GUI:WaitForChild("ExitUI")
+local ExitButton = ExitUI:FindFirstChild("TextButton")
+
+local RS = game:GetService("ReplicatedStorage")
+local REFolder = RS:FindFirstChild("RE")
+local JoinEvent = REFolder:FindFirstChild("Join")
+local ExitEvent = REFolder:FindFirstChild("Exit")
+
+JoinEvent.OnClientEvent:Connect(function(CamPos, CAM)
+	if CAM.Value then
+		PlayerCam.CameraType = Enum.CameraType.Scriptable
+		PlayerCam.CFrame = CamPos.CFrame
+	end
+	ExitUI.Enabled = true
+end)
+
+ExitButton.MouseButton1Up:Connect(function()
+	ExitEvent:FireServer()
+	PlayerCam.CameraType = Enum.CameraType.Custom
+	ExitUI.Enabled = false
+end)
