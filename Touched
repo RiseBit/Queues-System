@@ -1,0 +1,45 @@
+local RS = game:GetService("ReplicatedStorage")
+local SS = game:GetService("ServerStorage")
+local REFolder = RS:FindFirstChild("RE")
+local BindFolder = SS:FindFirstChild("BindAbleEvent")
+local TouchedEvent = BindFolder:FindFirstChild("TouchedBind")
+local QueueExit = BindFolder:FindFirstChild("QueueExit")
+local JoinEvent = REFolder:FindFirstChild("Join")
+local ExitEvent = REFolder:FindFirstChild("Exit")
+local Part = script.Parent
+local Folder = Part.Parent
+local Settings = Folder:FindFirstChild("Settings")
+local JoinPos = Folder:FindFirstChild("JoinPos")
+local UI = Folder:FindFirstChild("UI")
+local BillBoard = UI:FindFirstChild("BillboardGui")
+local PlrAmount = BillBoard:FindFirstChild("PlayerAmount")
+local QueuCD = BillBoard:FindFirstChild("QueuCD")
+local CAMPOS = Folder:FindFirstChild("CAM")
+
+
+local playersInThisGate = {}
+
+Part.Touched:Connect(function(hit)
+	local HRP = hit.Parent:FindFirstChild("HumanoidRootPart")
+	if not HRP then return end
+	local player = game.Players:GetPlayerFromCharacter(hit.Parent)
+	if not player then return end
+	if playersInThisGate[player] then return end
+
+	local QueueModule = require(game.ServerScriptService.QueuCentral:FindFirstChild("QueuesModule"))
+	if QueueModule.IsOnCooldown(hit.Parent, Folder) then return	end
+	if Settings.CurrentPlayer.Value >= Settings.MaxPlayer.Value then return end
+
+
+	playersInThisGate[player] = true
+	JoinEvent:FireClient(player, CAMPOS, Settings.CAM)
+	TouchedEvent:Fire(hit.Parent, Settings, BillBoard, Folder)
+end)
+
+ExitEvent.OnServerEvent:Connect(function(plr)
+
+	if playersInThisGate[plr] then
+		QueueExit:Fire(Settings, plr.Character, Folder, BillBoard)
+		playersInThisGate[plr] = nil
+	end
+end)
